@@ -95,6 +95,16 @@
     transition:opacity .14s ease, color .14s ease, background .14s ease}
   .book:hover .del,.del:focus{opacity:1}
   .del:hover{color:var(--rose);background:rgba(155,74,58,.08)}
+  .edit{position:absolute;top:12px;right:42px;border:none;background:transparent;cursor:pointer;
+    color:var(--line);padding:5px;border-radius:7px;line-height:0;opacity:0;
+    transition:opacity .14s ease, color .14s ease, background .14s ease}
+  .book:hover .edit,.edit:focus{opacity:1}
+  .edit:hover{color:var(--pine);background:rgba(44,85,69,.08)}
+
+  .site-foot{margin-top:48px;padding-top:22px;border-top:1px solid var(--line-soft);
+    text-align:center;font-family:"JetBrains Mono",monospace;font-size:12px;
+    letter-spacing:.04em;color:var(--ink-soft);line-height:1.7}
+  .site-foot b{color:var(--pine);font-weight:600}
 
   .state{text-align:center;padding:64px 20px;border:1.5px dashed var(--line);border-radius:14px;
     color:var(--ink-soft)}
@@ -135,6 +145,7 @@
     body{padding:0 16px 60px}
     .row2{grid-template-columns:1fr}
     .del{opacity:1}
+    .edit{opacity:1}
   }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   :focus-visible{outline:2px solid var(--pine);outline-offset:2px}
@@ -169,11 +180,10 @@
 
   <div id="catalog"></div>
 
-     <footer class="site-foot">
+  <footer class="site-foot">
     © <span id="footYear">2026</span> · <b>Đoàn Viện Công nghệ số</b><br>
     Hệ thống quản lý danh mục thư viện
   </footer>
-
 </div>
 
 <!-- Modal: Thêm sách -->
@@ -253,6 +263,7 @@ let db = null;
 let configured = false;
 let isAdmin = false;
 let baseUrl = "";
+let editingId = null;
 
 function checkConfig(){
   return SUPABASE_URL && SUPABASE_KEY &&
@@ -328,12 +339,15 @@ function render(){
     if(b.category) meta.push(`<span class="chip">${esc(b.category)}</span>`);
     if(b.year) meta.push(`<span class="year">${esc(b.year)}</span>`);
     if(b.qty) meta.push(`<span class="qty">${esc(b.qty)} bản</span>`);
-    const delBtn = isAdmin ? `<button class="del" title="Xóa khỏi tủ" onclick="removeBook('${b.id}')" aria-label="Xóa sách">
+    const adminBtns = isAdmin ? `<button class="edit" title="Chỉnh sửa" onclick="editBook('${b.id}')" aria-label="Sửa sách">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
+      <button class="del" title="Xóa khỏi tủ" onclick="removeBook('${b.id}')" aria-label="Xóa sách">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
       </button>` : "";
     return `<article class="book">
       <span class="spine" style="background:${spineFor(b.category)}"></span>
-      ${delBtn}
+      ${adminBtns}
       <p class="code">${esc(b.code||"")}</p>
       <h3 class="title">${esc(b.title)}</h3>
       ${b.author?`<p class="author">${esc(b.author)}</p>`:'<p class="author" style="opacity:.55">Chưa rõ tác giả</p>'}
@@ -362,34 +376,55 @@ async function loadBooks(){
 }
 
 /* ---- Modal thêm sách ---- */
-function openModal(){
+function openModal(book){
+  editingId = book ? book.id : null;
   $("formErr").textContent="";
-  ["f-title","f-author","f-cat","f-year","f-qty","f-notes"].forEach(i=>$(i).value="");
+  $("mTitle").textContent = book ? "Chỉnh sửa sách" : "Thêm sách vào tủ";
+  $("saveBtn").textContent = book ? "Lưu thay đổi" : "Lưu vào tủ sách";
+  $("f-title").value = book ? (book.title||"") : "";
+  $("f-author").value = book ? (book.author||"") : "";
+  $("f-cat").value = book ? (book.category||"") : "";
+  $("f-year").value = book ? (book.year||"") : "";
+  $("f-qty").value = book ? (book.qty||"") : "";
+  $("f-notes").value = book ? (book.notes||"") : "";
   $("overlay").classList.add("open");
   setTimeout(()=>$("f-title").focus(),60);
 }
-function closeModal(){ $("overlay").classList.remove("open"); }
+function closeModal(){ $("overlay").classList.remove("open"); editingId=null; }
+function editBook(id){
+  const b=books.find(x=>x.id==id);
+  if(b) openModal(b);
+}
 
 async function saveBook(){
   const title=$("f-title").value.trim();
   if(!title){ $("formErr").textContent="Vui lòng nhập tên sách."; $("f-title").focus(); return; }
   const cat=$("f-cat").value.trim();
-  const row={
+  const fields={
     title,
     author:$("f-author").value.trim()||null,
     category:cat||null,
     year:$("f-year").value.trim()||null,
     qty:$("f-qty").value.trim()||null,
-    notes:$("f-notes").value.trim()||null,
-    code:shelfCode(cat, books.length+1)
+    notes:$("f-notes").value.trim()||null
   };
-  const btn=$("saveBtn"); btn.disabled=true; btn.textContent="Đang lưu…";
-  const { data, error } = await db.from("books").insert(row).select();
-  btn.disabled=false; btn.textContent="Lưu vào tủ sách";
+  const btn=$("saveBtn"); const label=btn.textContent; btn.disabled=true; btn.textContent="Đang lưu…";
+  let data, error;
+  if(editingId){
+    ({data,error} = await db.from("books").update(fields).eq("id",editingId).select());
+  } else {
+    fields.code = shelfCode(cat, books.length+1);
+    ({data,error} = await db.from("books").insert(fields).select());
+  }
+  btn.disabled=false; btn.textContent=label;
   if(error){ $("formErr").textContent="Lưu không thành công: "+error.message; return; }
-  if(data&&data[0]) books.unshift(data[0]);
-  closeModal(); buildFilter(); render();
-  toast("Đã thêm vào tủ sách");
+  if(editingId){
+    if(data&&data[0]){ const i=books.findIndex(b=>b.id==editingId); if(i>-1) books[i]=data[0]; }
+    closeModal(); buildFilter(); render(); toast("Đã lưu thay đổi");
+  } else {
+    if(data&&data[0]) books.unshift(data[0]);
+    closeModal(); buildFilter(); render(); toast("Đã thêm vào tủ sách");
+  }
 }
 
 async function removeBook(id){
@@ -440,7 +475,7 @@ async function initAuth(){
 }
 
 /* ---- Wire up ---- */
-$("addBtn").onclick=openModal;
+$("addBtn").onclick=()=>openModal();
 $("cancelBtn").onclick=closeModal;
 $("saveBtn").onclick=saveBook;
 $("refreshBtn").onclick=loadBooks;
@@ -461,6 +496,7 @@ document.addEventListener("keydown",e=>{
 window.addEventListener("focus",()=>{ if(configured) loadBooks(); });
 
 /* ---- Khởi động ---- */
+$("footYear").textContent=new Date().getFullYear();
 configured=checkConfig();
 if(configured){
   baseUrl=String(SUPABASE_URL).trim().replace(/\/+$/,"");   // bỏ dấu / thừa ở cuối
