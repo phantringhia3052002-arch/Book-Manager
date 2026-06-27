@@ -12,9 +12,10 @@
        • anon / public key (publishable key) → dán vào SUPABASE_KEY
      ════════════════════════════════════════════════════════════════ -->
 <script>
-  const SUPABASE_URL = "https://vknzramwpyvixlphyvxr.supabase.co";
+  const SUPABASE_URL = "https://vknzramwpyvixlphyvxr.supabase.co/rest/v1/";
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrbnpyYW13cHl2aXhscGh5dnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzIzNDcsImV4cCI6MjA5ODA0ODM0N30.4g1fo5RVMgo570YpCm5YkrVcRpWRR_qLKOMEfdPlkzU";
 </script>
+
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,6 +47,9 @@
   .count{font-family:"JetBrains Mono",monospace;font-size:13px;font-weight:600;color:var(--pine);
     background:rgba(44,85,69,.08);border:1px solid rgba(44,85,69,.18);border-radius:999px;
     padding:7px 14px;white-space:nowrap}
+  .badge{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;color:#F4F1E8;background:var(--ochre);border-radius:999px;
+    padding:5px 11px;display:none}
   .search{position:relative;flex:1;min-width:200px}
   .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.45}
   input,select,textarea{font-family:inherit;font-size:15px;color:var(--ink);background:var(--card);
@@ -64,6 +68,7 @@
   .btn-ghost{background:transparent;color:var(--ink-soft);border-color:var(--line)}
   .btn-ghost:hover{background:var(--card);color:var(--ink)}
   .icon-btn{padding:11px 13px}
+  #addBtn,#authBtn{display:none}
 
   .shared-note{font-size:12.5px;color:var(--ink-soft);margin:2px 0 26px;
     display:flex;align-items:center;gap:7px}
@@ -108,6 +113,7 @@
   .overlay.open{display:flex}
   .modal{background:var(--paper);border:1px solid var(--line);border-radius:16px;width:100%;
     max-width:520px;padding:28px 26px 24px;box-shadow:0 24px 70px rgba(20,24,19,.3);animation:rise .22s ease}
+  .modal.narrow{max-width:420px}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .modal h2{font-family:"Newsreader",serif;font-weight:500;font-size:26px;margin:0 0 2px}
   .modal .sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 20px}
@@ -139,11 +145,12 @@
   <header>
     <p class="eyebrow">Danh mục thư viện</p>
     <h1>Tủ sách <em>chung</em></h1>
-    <p class="lede">Nơi tra cứu mọi đầu sách trong thư viện. Ai cũng có thể <b>xem danh mục</b> và <b>thêm sách mới</b> vào tủ.</p>
+    <p class="lede">Nơi tra cứu mọi đầu sách trong thư viện. Mọi người đều <b>xem được danh mục</b>; chỉ <b>quản trị viên</b> mới thêm hoặc xóa sách.</p>
   </header>
 
   <div class="toolbar">
     <span class="count" id="count">— đầu sách</span>
+    <span class="badge" id="adminBadge">● Quản trị</span>
     <div class="search">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="search" type="text" placeholder="Tìm theo tên sách hoặc tác giả…" autocomplete="off">
@@ -152,16 +159,18 @@
     <button class="btn btn-ghost icon-btn" id="refreshBtn" title="Tải lại danh sách" aria-label="Tải lại">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
     </button>
+    <button class="btn btn-ghost" id="authBtn">Đăng nhập quản trị</button>
     <button class="btn btn-primary" id="addBtn">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>
       Thêm sách
     </button>
   </div>
-  <p class="shared-note"><span class="dot"></span> Dữ liệu dùng chung qua Supabase — mọi người mở trang này đều thấy cùng một danh sách.</p>
+  <p class="shared-note"><span class="dot"></span> Dữ liệu dùng chung qua Supabase — ai cũng xem được; chỉ quản trị viên đã đăng nhập mới chỉnh sửa.</p>
 
   <div id="catalog"></div>
 </div>
 
+<!-- Modal: Thêm sách -->
 <div class="overlay" id="overlay">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     <h2 id="mTitle">Thêm sách vào tủ</h2>
@@ -205,9 +214,29 @@
   </div>
 </div>
 
+<!-- Modal: Đăng nhập quản trị -->
+<div class="overlay" id="loginOverlay">
+  <div class="modal narrow" role="dialog" aria-modal="true" aria-labelledby="lTitle">
+    <h2 id="lTitle">Đăng nhập quản trị</h2>
+    <p class="sub">Dành cho người quản lý thư viện. Người xem không cần đăng nhập.</p>
+    <div class="field">
+      <label for="l-email">Email</label>
+      <input id="l-email" type="email" placeholder="email@vidu.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="l-pass">Mật khẩu</label>
+      <input id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <p class="err-msg" id="loginErr"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="loginCancel">Hủy</button>
+      <button class="btn btn-primary" id="loginBtn">Đăng nhập</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<!-- Thư viện Supabase chính thức (nạp từ CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SPINES = ["#2C5545","#B07A2C","#7A5C3E","#4A6B8A","#8A4A5C","#5C7A4A","#6B5C8A","#9B4A3A"];
@@ -216,14 +245,13 @@ const catalog = $("catalog");
 let books = [];
 let db = null;
 let configured = false;
+let isAdmin = false;
 
-/* Kiểm tra đã dán URL + KEY chưa */
 function checkConfig(){
   return SUPABASE_URL && SUPABASE_KEY &&
     SUPABASE_URL.startsWith("http") &&
     !SUPABASE_URL.includes("DÁN_") && !SUPABASE_KEY.includes("DÁN_");
 }
-
 function deburr(s){
   return (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D");
 }
@@ -243,6 +271,13 @@ let toastT;
 function toast(msg){
   const t=$("toast"); t.textContent=msg; t.classList.add("show");
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+function updateAuthUI(){
+  $("authBtn").style.display="";
+  $("addBtn").style.display = isAdmin ? "" : "none";
+  $("authBtn").textContent = isAdmin ? "Đăng xuất" : "Đăng nhập quản trị";
+  $("adminBadge").style.display = isAdmin ? "" : "none";
 }
 
 function buildFilter(){
@@ -272,8 +307,8 @@ function render(){
 
   if(books.length===0){
     catalog.innerHTML='<div class="state"><h2>Tủ sách còn trống</h2>'+
-      '<p>Chưa có cuốn nào trong danh mục. Hãy thêm đầu sách đầu tiên để bắt đầu.</p>'+
-      '<button class="btn btn-primary" onclick="openModal()">Thêm cuốn đầu tiên</button></div>';
+      '<p>Chưa có cuốn nào trong danh mục.'+(isAdmin?' Hãy thêm đầu sách đầu tiên để bắt đầu.':' Quản trị viên sẽ sớm bổ sung.')+'</p>'+
+      (isAdmin?'<button class="btn btn-primary" onclick="openModal()">Thêm cuốn đầu tiên</button>':'')+'</div>';
     return;
   }
   if(list.length===0){
@@ -286,11 +321,12 @@ function render(){
     if(b.category) meta.push(`<span class="chip">${esc(b.category)}</span>`);
     if(b.year) meta.push(`<span class="year">${esc(b.year)}</span>`);
     if(b.qty) meta.push(`<span class="qty">${esc(b.qty)} bản</span>`);
+    const delBtn = isAdmin ? `<button class="del" title="Xóa khỏi tủ" onclick="removeBook('${b.id}')" aria-label="Xóa sách">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+      </button>` : "";
     return `<article class="book">
       <span class="spine" style="background:${spineFor(b.category)}"></span>
-      <button class="del" title="Xóa khỏi tủ" onclick="removeBook('${b.id}')" aria-label="Xóa sách">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-      </button>
+      ${delBtn}
       <p class="code">${esc(b.code||"")}</p>
       <h3 class="title">${esc(b.title)}</h3>
       ${b.author?`<p class="author">${esc(b.author)}</p>`:'<p class="author" style="opacity:.55">Chưa rõ tác giả</p>'}
@@ -315,6 +351,7 @@ async function loadBooks(){
   render();
 }
 
+/* ---- Modal thêm sách ---- */
 function openModal(){
   $("formErr").textContent="";
   ["f-title","f-author","f-cat","f-year","f-qty","f-notes"].forEach(i=>$(i).value="");
@@ -356,23 +393,71 @@ async function removeBook(id){
   toast("Đã xóa khỏi tủ sách");
 }
 
-/* Wire up */
+/* ---- Đăng nhập / Đăng xuất ---- */
+function openLogin(){
+  $("loginErr").textContent=""; $("l-email").value=""; $("l-pass").value="";
+  $("loginOverlay").classList.add("open");
+  setTimeout(()=>$("l-email").focus(),60);
+}
+function closeLogin(){ $("loginOverlay").classList.remove("open"); }
+
+async function doLogin(){
+  const email=$("l-email").value.trim();
+  const pass=$("l-pass").value;
+  if(!email||!pass){ $("loginErr").textContent="Nhập đủ email và mật khẩu."; return; }
+  const btn=$("loginBtn"); btn.disabled=true; btn.textContent="Đang đăng nhập…";
+  const { error } = await db.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false; btn.textContent="Đăng nhập";
+  if(error){ $("loginErr").textContent="Đăng nhập không thành công: "+error.message; return; }
+  closeLogin();
+  toast("Đã đăng nhập với quyền quản trị");
+}
+
+async function doLogout(){
+  await db.auth.signOut();
+  toast("Đã đăng xuất");
+}
+
+async function initAuth(){
+  const { data:{ session } } = await db.auth.getSession();
+  isAdmin = !!session;
+  updateAuthUI();
+  db.auth.onAuthStateChange((_e, sess)=>{
+    isAdmin = !!sess;
+    updateAuthUI();
+    render();
+  });
+}
+
+/* ---- Wire up ---- */
 $("addBtn").onclick=openModal;
 $("cancelBtn").onclick=closeModal;
 $("saveBtn").onclick=saveBook;
 $("refreshBtn").onclick=loadBooks;
+$("authBtn").onclick=()=>{ isAdmin ? doLogout() : openLogin(); };
+$("loginCancel").onclick=closeLogin;
+$("loginBtn").onclick=doLogin;
 $("search").oninput=render;
 $("filter").onchange=render;
 $("overlay").onclick=e=>{ if(e.target===$("overlay")) closeModal(); };
+$("loginOverlay").onclick=e=>{ if(e.target===$("loginOverlay")) closeLogin(); };
 document.addEventListener("keydown",e=>{
-  if(e.key==="Escape") closeModal();
-  if(e.key==="Enter"&&$("overlay").classList.contains("open")&&e.target.tagName!=="TEXTAREA") saveBook();
+  if(e.key==="Escape"){ closeModal(); closeLogin(); }
+  if(e.key==="Enter"){
+    if($("loginOverlay").classList.contains("open")) doLogin();
+    else if($("overlay").classList.contains("open")&&e.target.tagName!=="TEXTAREA") saveBook();
+  }
 });
 window.addEventListener("focus",()=>{ if(configured) loadBooks(); });
 
-/* Khởi động */
+/* ---- Khởi động ---- */
 configured=checkConfig();
-if(configured){ db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY); loadBooks(); }
+if(configured){
+  const url=String(SUPABASE_URL).trim().replace(/\/+$/,"");   // bỏ dấu / thừa ở cuối
+  const key=String(SUPABASE_KEY).trim();
+  db=supabase.createClient(url,key);
+  initAuth().then(loadBooks);
+}
 else render();
 </script>
 </body>
