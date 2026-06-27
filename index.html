@@ -246,6 +246,7 @@ let books = [];
 let db = null;
 let configured = false;
 let isAdmin = false;
+let baseUrl = "";
 
 function checkConfig(){
   return SUPABASE_URL && SUPABASE_KEY &&
@@ -274,10 +275,10 @@ function toast(msg){
 }
 
 function updateAuthUI(){
-  $("authBtn").style.display="";
-  $("addBtn").style.display = isAdmin ? "" : "none";
+  $("authBtn").style.display="inline-flex";
+  $("addBtn").style.display = isAdmin ? "inline-flex" : "none";
   $("authBtn").textContent = isAdmin ? "Đăng xuất" : "Đăng nhập quản trị";
-  $("adminBadge").style.display = isAdmin ? "" : "none";
+  $("adminBadge").style.display = isAdmin ? "inline-block" : "none";
 }
 
 function buildFilter(){
@@ -341,8 +342,11 @@ async function loadBooks(){
   catalog.innerHTML='<div class="state"><div class="spinner"></div><p>Đang tải tủ sách…</p></div>';
   const { data, error } = await db.from("books").select("*").order("created_at",{ascending:false});
   if(error){
+    const hint = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(baseUrl)
+      ? "" : '<br><b>URL có vẻ sai định dạng</b> — phải là dạng https://abcxyz.supabase.co';
     catalog.innerHTML='<div class="state err"><h2>Không tải được dữ liệu</h2>'+
-      '<p>Kiểm tra lại URL/KEY, bảng <code>books</code> đã được tạo, và các policy (RLS) đã bật. '+
+      '<p>Kiểm tra lại URL/KEY, bảng <code>books</code> đã được tạo, và các policy (RLS) đã bật.<br>'+
+      'URL đang dùng: <code>'+esc(baseUrl)+'</code>'+hint+'<br>'+
       'Chi tiết lỗi: '+esc(error.message)+'</p></div>';
     return;
   }
@@ -453,9 +457,9 @@ window.addEventListener("focus",()=>{ if(configured) loadBooks(); });
 /* ---- Khởi động ---- */
 configured=checkConfig();
 if(configured){
-  const url=String(SUPABASE_URL).trim().replace(/\/+$/,"");   // bỏ dấu / thừa ở cuối
+  baseUrl=String(SUPABASE_URL).trim().replace(/\/+$/,"");   // bỏ dấu / thừa ở cuối
   const key=String(SUPABASE_KEY).trim();
-  db=supabase.createClient(url,key);
+  db=supabase.createClient(baseUrl,key);
   initAuth().then(loadBooks);
 }
 else render();
