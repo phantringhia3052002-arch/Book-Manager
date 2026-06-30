@@ -166,7 +166,7 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="search" type="text" placeholder="Tìm theo tên sách hoặc tác giả…" autocomplete="off">
     </div>
-   
+
     <button class="btn btn-ghost icon-btn" id="refreshBtn" title="Tải lại danh sách" aria-label="Tải lại">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
     </button>
@@ -176,6 +176,7 @@
       Thêm sách
     </button>
   </div>
+  <p class="shared-note"><span class="dot"></span> Dữ liệu dùng chung qua Supabase — ai cũng xem được; chỉ quản trị viên đã đăng nhập mới chỉnh sửa.</p>
 
   <div id="catalog"></div>
 
@@ -298,11 +299,12 @@ function updateAuthUI(){
 }
 
 function buildFilter(){
+  const fil=$("filter"); if(!fil) return;          // an toàn nếu không có ô lọc
   const cats=[...new Set(books.map(b=>b.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"vi"));
-  const cur=$("filter").value;
-  $("filter").innerHTML='<option value="">Mọi thể loại</option>'+
+  const cur=fil.value;
+  fil.innerHTML='<option value="">Mọi thể loại</option>'+
     cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
-  if(cats.includes(cur)) $("filter").value=cur;
+  if(cats.includes(cur)) fil.value=cur;
 }
 
 function render(){
@@ -314,7 +316,8 @@ function render(){
     return;
   }
   const q=$("search").value.trim().toLowerCase();
-  const f=$("filter").value;
+  const fil=$("filter");
+  const f=fil ? fil.value : "";                     // an toàn nếu không có ô lọc
   let list=books.slice();
   if(f) list=list.filter(b=>b.category===f);
   if(q) list=list.filter(b=>
@@ -330,7 +333,7 @@ function render(){
   }
   if(list.length===0){
     catalog.innerHTML='<div class="state"><h2>Không tìm thấy</h2>'+
-      '<p>Không có đầu sách nào khớp với tìm kiếm hoặc bộ lọc hiện tại.</p></div>';
+      '<p>Không có đầu sách nào khớp với tìm kiếm hiện tại.</p></div>';
     return;
   }
   catalog.innerHTML='<div class="grid">'+list.map(b=>{
@@ -374,7 +377,7 @@ async function loadBooks(){
   render();
 }
 
-/* ---- Modal thêm sách ---- */
+/* ---- Modal thêm / sửa sách ---- */
 function openModal(book){
   editingId = book ? book.id : null;
   $("formErr").textContent="";
@@ -463,8 +466,10 @@ async function doLogout(){
 }
 
 async function initAuth(){
-  const { data:{ session } } = await db.auth.getSession();
-  isAdmin = !!session;
+  try{
+    const { data:{ session } } = await db.auth.getSession();
+    isAdmin = !!session;
+  }catch(e){ isAdmin = false; }
   updateAuthUI();
   db.auth.onAuthStateChange((_e, sess)=>{
     isAdmin = !!sess;
@@ -482,7 +487,7 @@ $("authBtn").onclick=()=>{ isAdmin ? doLogout() : openLogin(); };
 $("loginCancel").onclick=closeLogin;
 $("loginBtn").onclick=doLogin;
 $("search").oninput=render;
-$("filter").onchange=render;
+const filterEl=$("filter"); if(filterEl) filterEl.onchange=render;   // an toàn nếu không có ô lọc
 $("overlay").onclick=e=>{ if(e.target===$("overlay")) closeModal(); };
 $("loginOverlay").onclick=e=>{ if(e.target===$("loginOverlay")) closeLogin(); };
 document.addEventListener("keydown",e=>{
@@ -498,12 +503,15 @@ window.addEventListener("focus",()=>{ if(configured) loadBooks(); });
 $("footYear").textContent=new Date().getFullYear();
 configured=checkConfig();
 if(configured){
-  baseUrl=String(SUPABASE_URL).trim().replace(/\/+$/,"");   // bỏ dấu / thừa ở cuối
+  baseUrl=String(SUPABASE_URL).trim().replace(/\/+$/,"");
   const key=String(SUPABASE_KEY).trim();
   db=supabase.createClient(baseUrl,key);
   initAuth().then(loadBooks);
 }
 else render();
 </script>
+</body>
+</html>
+
 </body>
 </html>
