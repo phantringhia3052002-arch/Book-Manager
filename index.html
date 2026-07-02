@@ -355,6 +355,14 @@
   .field-hint{font-size:.75rem;color:var(--muted);margin:6px 0 0;line-height:1.4}
   .field-hint b{color:var(--ink);font-weight:600}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cover-field{display:flex;gap:14px;align-items:flex-start}
+  .cover-preview{
+    width:84px;height:112px;flex:none;border-radius:10px;overflow:hidden;
+    border:1px solid var(--line);background:var(--surface-2);position:relative;
+  }
+  .cover-preview img{width:100%;height:100%;object-fit:cover;display:block}
+  .cover-controls{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .cover-controls .field-hint{width:100%;margin:0}
   .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid var(--line-2)}
   .err-msg{color:var(--danger);font-size:.82rem;margin:6px 0 0;min-height:1px}
 
@@ -506,6 +514,18 @@
       <label for="f-notes">Nhà XB <span class="opt">— không bắt buộc</span></label>
       <input id="f-notes" type="text" placeholder="VD: NXB Trẻ, NXB Kim Đồng…" autocomplete="off">
     </div>
+    <div class="field">
+      <label>Ảnh bìa <span class="opt">— không bắt buộc</span></label>
+      <div class="cover-field">
+        <div class="cover-preview"><img id="coverImg" src="img/Default.jpg" alt=""></div>
+        <div class="cover-controls">
+          <button type="button" class="btn btn-secondary btn-sm" id="coverPickBtn">Chọn ảnh…</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="coverClearBtn">Bỏ ảnh</button>
+          <input type="file" id="coverInput" accept="image/*" style="display:none">
+          <p class="field-hint">Ảnh sẽ tự thu nhỏ để tải nhanh. Chưa chọn thì dùng ảnh mặc định.</p>
+        </div>
+      </div>
+    </div>
     <p class="err-msg" id="formErr"></p>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="cancelBtn">Hủy</button>
@@ -553,6 +573,8 @@ let isAdmin = false;
 let baseUrl = "";
 let editingId = null;
 let currentPage = 1;
+let coverFile = null;      // tệp ảnh admin vừa chọn (chưa tải lên)
+let coverCleared = false;  // admin đã bấm "Bỏ ảnh"
 
 function checkConfig(){
   return SUPABASE_URL && SUPABASE_KEY &&
@@ -729,7 +751,7 @@ function render(){
       </div>` : "";
     return `<article class="book" style="--spine:${spine}">
       <div class="book-cover">
-        <img src="${DEFAULT_COVER}" alt="" loading="lazy" width="108" height="148">
+        <img src="${esc(b.cover_url||DEFAULT_COVER)}" onerror="this.onerror=null;this.src='${DEFAULT_COVER}'" alt="" loading="lazy" width="108" height="148">
       </div>
       <div class="book-inner">
       <div class="book-top">
@@ -786,6 +808,11 @@ function openModal(book){
   $("f-year").value = book ? (book.year||"") : "";
   $("f-qty").value = book ? (book.qty||"") : "";
   $("f-notes").value = book ? (book.notes||"") : "";
+  coverFile=null; coverCleared=false;
+  const existingCover = (book && book.cover_url) ? book.cover_url : DEFAULT_COVER;
+  const cImg=$("coverImg");
+  cImg.onerror=function(){ this.onerror=null; this.src=DEFAULT_COVER; };
+  cImg.src=existingCover;
   $("overlay").classList.add("open");
   setTimeout(()=>$("f-title").focus(),60);
 }
@@ -793,6 +820,40 @@ function closeModal(){ $("overlay").classList.remove("open"); editingId=null; }
 function editBook(id){
   const b=books.find(x=>x.id==id);
   if(b) openModal(b);
+}
+
+/* Thu nhỏ + nén ảnh về JPEG cạnh dài tối đa maxDim, cho ảnh bìa nhẹ */
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let w=img.naturalWidth, h=img.naturalHeight;
+      if(!w||!h){ reject(new Error("Ảnh không hợp lệ")); return; }
+      const scale=Math.min(1, maxDim/Math.max(w,h));
+      w=Math.round(w*scale); h=Math.round(h*scale);
+      const c=document.createElement("canvas");
+      c.width=w; c.height=h;
+      const ctx=c.getContext("2d");
+      ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img,0,0,w,h);
+      c.toBlob(b=> b?resolve(b):reject(new Error("Không nén được ảnh")), "image/jpeg", quality);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error("Không đọc được ảnh")); };
+    img.src=url;
+  });
+}
+
+/* Tải ảnh bìa lên bucket "covers", trả về URL công khai */
+async function uploadCover(file){
+  const blob = await compressImage(file, 700, 0.82);
+  const path = "cover_"+Date.now()+"_"+Math.random().toString(36).slice(2,7)+".jpg";
+  const { error } = await db.storage.from("covers")
+    .upload(path, blob, { contentType:"image/jpeg", cacheControl:"3600", upsert:false });
+  if(error) throw error;
+  const { data } = db.storage.from("covers").getPublicUrl(path);
+  return data.publicUrl;
 }
 
 async function saveBook(){
@@ -807,7 +868,24 @@ async function saveBook(){
     qty:$("f-qty").value.trim()||null,
     notes:$("f-notes").value.trim()||null
   };
-  const btn=$("saveBtn"); const label=btn.textContent; btn.disabled=true; btn.textContent="Đang lưu…";
+  const btn=$("saveBtn"); const label=btn.textContent; btn.disabled=true;
+
+  // Ảnh bìa: nếu admin chọn ảnh mới → tải lên; nếu bấm "Bỏ ảnh" → xóa URL
+  try{
+    if(coverFile){
+      btn.textContent="Đang tải ảnh…";
+      fields.cover_url = await uploadCover(coverFile);
+    } else if(coverCleared){
+      fields.cover_url = null;
+    }
+  }catch(e){
+    btn.disabled=false; btn.textContent=label;
+    $("formErr").textContent="Tải ảnh không thành công: "+(e.message||e)+
+      " — kiểm tra đã tạo bucket 'covers' (công khai) và policy tải lên chưa.";
+    return;
+  }
+
+  btn.textContent="Đang lưu…";
   let data, error;
   if(editingId){
     ({data,error} = await db.from("books").update(fields).eq("id",editingId).select());
@@ -980,6 +1058,15 @@ async function initAuth(){
 $("addBtn").onclick=()=>openModal();
 $("cancelBtn").onclick=closeModal;
 $("saveBtn").onclick=saveBook;
+$("coverPickBtn").onclick=()=>$("coverInput").click();
+$("coverClearBtn").onclick=()=>{ coverFile=null; coverCleared=true; $("coverImg").src=DEFAULT_COVER; };
+$("coverInput").onchange=e=>{
+  const f=e.target.files[0]; e.target.value="";
+  if(!f) return;
+  if(!/^image\//.test(f.type)){ toast("Vui lòng chọn tệp ảnh","warn"); return; }
+  coverFile=f; coverCleared=false;
+  $("coverImg").src=URL.createObjectURL(f);
+};
 $("refreshBtn").onclick=loadBooks;
 $("exportBtn").onclick=exportBooks;
 $("templateBtn").onclick=downloadTemplate;
